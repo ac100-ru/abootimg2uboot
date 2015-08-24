@@ -1,0 +1,58 @@
+#!/bin/bash
+
+src_boot_image="$1"
+if [[ -z $src_boot_image ]]; then
+	echo "Usage: $0 <boot image>"
+	exit 0
+fi
+if [[ ! -f "$src_boot_image" ]]; then
+	echo "Source file $src_boot_image doesn't exists"
+	exit 1
+fi
+
+Error() {
+	echo $@
+	exit 1
+}
+
+realpath() {
+	[[ "$1" = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
+
+
+src_dir="`pwd`"
+src_boot_image="$(realpath $src_boot_image)"
+
+
+echo "Changing working dir..."
+temp_dir="/tmp/ac100-to-uboot"
+rm -rf "$temp_dir"
+mkdir "$temp_dir" || Error "Can't create $temp_dir"
+mkdir "$temp_dir/boot" || Error "Can't create $temp_dir/boot"
+pushd "$temp_dir"
+
+echo "Copying base files..."
+cp "${src_dir}/base/"* "$temp_dir/boot" || Error "Can't unpack base image"
+
+echo "Unpacking boot image..."
+abootimg -x "$src_boot_image" || Error "Can't unpack src boot image $src_boot_image"
+
+echo "Packing initrd for u-boot..."
+mkimage -n MyRamDisk -A arm -O linux -T script -C none -d boot/boot.cmd boot/boot.scr || Error "Can't pack boot script"
+
+echo "Packing initrd for u-boot..."
+mkimage -n MyRamDisk -A arm -O linux -T ramdisk -C gzip -d initrd.img boot/uInitrd || Error "Can't repack initrd for u-boot"
+
+echo "Generating new archive"
+cp zImage ./boot/zImage || Error "Can't put zImage"
+
+zip -r boot_ubuntu.zip ./boot || Error "Can't pack new archive"
+
+cp ./boot_ubuntu.zip "$src_dir"
+
+popd
+rm -rf "$temp_dir"
+
+echo -en "\nDone.\nResult:   "
+
+ls -1 "$src_dir/boot_ubuntu.zip"
